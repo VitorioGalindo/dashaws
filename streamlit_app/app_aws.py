@@ -1,3 +1,4 @@
+# streamlit_app/app_aws.py (Versão com Debug)
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
@@ -5,14 +6,18 @@ import boto3
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAÇÃO DA PÁGINA E CONEXÃO ---
-st.set_page_config(layout="wide", page_title="Dashboard Financeiro")
+st.set_page_config(layout="wide", page_title="Dashboard Financeiro Unificado")
 
-@st.cache_resource(ttl=300) # Cache por 5 minutos
+# Escreve a primeira mensagem assim que o script começa
+st.write("1. Script iniciado. Tentando obter a conexão com o banco de dados...")
+
+@st.cache_resource(ttl=300)
 def get_db_engine():
     """Conecta-se ao banco de dados usando segredos do SSM Parameter Store."""
     try:
-        # Substitua pela sua região se for diferente
+        st.write("2. Dentro da função get_db_engine: Tentando criar o cliente SSM...")
         ssm_client = boto3.client('ssm', region_name='us-east-2')
+        st.write("3. Cliente SSM criado. Tentando buscar os segredos...")
 
         def get_secret(param_name):
             response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
@@ -22,49 +27,33 @@ def get_db_engine():
         password = get_secret("/finance-app/db/password")
         host = get_secret("/finance-app/db/host")
         dbname = "postgres"
-
+        st.write("4. Segredos do banco de dados lidos com sucesso.")
+        
         conn_str = f"postgresql+psycopg2://{user}:{password}@{host}/{dbname}?sslmode=require"
-        return create_engine(conn_str)
+        st.write("5. String de conexão criada. Tentando criar a engine do banco...")
+        
+        engine = create_engine(conn_str)
+        
+        # Testa a conexão
+        with engine.connect() as connection:
+            st.write("6. Conexão com o banco de dados TESTADA e bem-sucedida!")
+            
+        return engine
     except Exception as e:
-        st.error(f"Erro Crítico de Conexão: Não foi possível conectar ao banco ou ler os segredos. Verifique as permissões da IAM Role do App Runner. Detalhes: {e}")
+        st.error(f"ERRO CRÍTICO NA CONEXÃO: {e}")
         st.stop()
 
+# Chama a função de conexão
 engine = get_db_engine()
+
+st.write("7. Engine do banco de dados obtida. O script continuará a ser executado.")
 
 # --- FUNÇÃO PRINCIPAL DA PÁGINA ---
 def rtd_portfolio_page():
     st.title("📊 Carteira de Ações em Tempo Real")
-    st_autorefresh(interval=30000, key="rtd_refresher") # Atualiza a cada 30 segundos
-
-    try:
-        df_config = pd.read_sql("SELECT * FROM portfolio_config", engine)
-        df_quotes = pd.read_sql("SELECT * FROM realtime_quotes", engine)
-
-        if df_config.empty:
-            st.warning("Sua carteira está vazia. Adicione ativos no seu banco de dados usando o DBeaver para começar.")
-            return
-
-        df_portfolio = pd.merge(df_config, df_quotes, on='ticker', how='left').fillna(0)
-        df_portfolio['posicao_rs'] = df_portfolio['quantidade'] * df_portfolio['last_price']
-        total_pl = df_portfolio['posicao_rs'].sum()
-
-        st.header("Resumo da Carteira")
-        st.metric("Patrimônio Total em Ações", f"R$ {total_pl:,.2f}")
-
-        st.header("Composição")
-        st.dataframe(
-            df_portfolio[['ticker', 'quantidade', 'last_price', 'posicao_rs', 'updated_at']],
-            use_container_width=True,
-            column_config={
-                "ticker": "Ativo",
-                "quantidade": "Quantidade",
-                "last_price": st.column_config.NumberColumn("Preço Atual (R$)", format="%.2f"),
-                "posicao_rs": st.column_config.NumberColumn("Posição (R$)", format="R$ %.2f"),
-                "updated_at": st.column_config.DatetimeColumn("Última Atualização", format="HH:mm:ss")
-            }
-        )
-    except Exception as e:
-        st.error(f"Erro ao carregar dados do portfólio: {e}")
+    st_autorefresh(interval=30000, key="rtd_refresher")
+    # ... (o resto da sua lógica de página pode continuar aqui) ...
+    st.success("A página foi renderizada completamente!")
 
 # --- Executa a página ---
 rtd_portfolio_page()
