@@ -5,13 +5,15 @@ import boto3
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAÇÃO DA PÁGINA E CONEXÃO ---
-st.set_page_config(layout="wide", page_title="Dashboard Financeiro Unificado")
+st.set_page_config(layout="wide", page_title="Dashboard Financeiro")
 
-@st.cache_resource(ttl=600)
+@st.cache_resource(ttl=300) # Cache por 5 minutos
 def get_db_engine():
     """Conecta-se ao banco de dados usando segredos do SSM Parameter Store."""
     try:
-        ssm_client = boto3.client('ssm', region_name='sa-east-1')
+        # Substitua pela sua região se for diferente
+        ssm_client = boto3.client('ssm', region_name='us-east-2')
+
         def get_secret(param_name):
             response = ssm_client.get_parameter(Name=param_name, WithDecryption=True)
             return response['Parameter']['Value']
@@ -20,7 +22,7 @@ def get_db_engine():
         password = get_secret("/finance-app/db/password")
         host = get_secret("/finance-app/db/host")
         dbname = "postgres"
-        
+
         conn_str = f"postgresql+psycopg2://{user}:{password}@{host}/{dbname}?sslmode=require"
         return create_engine(conn_str)
     except Exception as e:
@@ -29,51 +31,40 @@ def get_db_engine():
 
 engine = get_db_engine()
 
-# --- FUNÇÕES DAS PÁGINAS ---
+# --- FUNÇÃO PRINCIPAL DA PÁGINA ---
 def rtd_portfolio_page():
-    st.title("📊 Carteira em Tempo Real (RTD)")
-    st_autorefresh(interval=20000, key="rtd_refresher")
-    
-    tab_dashboard, tab_config = st.tabs(["Dashboard", "Configuração da Carteira"])
+    st.title("📊 Carteira de Ações em Tempo Real")
+    st_autorefresh(interval=30000, key="rtd_refresher") # Atualiza a cada 30 segundos
 
-    with tab_dashboard:
-        display_rtd_dashboard()
-    with tab_config:
-        configure_portfolio()
-
-def display_rtd_dashboard():
     try:
         df_config = pd.read_sql("SELECT * FROM portfolio_config", engine)
         df_quotes = pd.read_sql("SELECT * FROM realtime_quotes", engine)
-        
+
         if df_config.empty:
-            st.warning("Carteira vazia. Adicione ativos na aba de 'Configuração'.")
+            st.warning("Sua carteira está vazia. Adicione ativos no seu banco de dados usando o DBeaver para começar.")
             return
-            
+
         df_portfolio = pd.merge(df_config, df_quotes, on='ticker', how='left').fillna(0)
         df_portfolio['posicao_rs'] = df_portfolio['quantidade'] * df_portfolio['last_price']
         total_pl = df_portfolio['posicao_rs'].sum()
 
         st.header("Resumo da Carteira")
-        st.metric("Patrimônio em Ações", f"R$ {total_pl:,.2f}")
-        st.dataframe(df_portfolio[['ticker', 'quantidade', 'last_price', 'posicao_rs']], use_container_width=True)
-    except Exception as e:
-        st.error(f"Erro ao montar o dashboard: {e}")
+        st.metric("Patrimônio Total em Ações", f"R$ {total_pl:,.2f}")
 
-def configure_portfolio():
-    st.header("Gerenciar Ativos da Carteira")
-    try:
-        df_config = pd.read_sql("SELECT id, ticker, quantidade FROM portfolio_config", engine, index_col='id')
-        edited_df = st.data_editor(df_config, num_rows="dynamic", use_container_width=True)
-        if st.button("Salvar Alterações"):
-            edited_df.to_sql('portfolio_config', engine, if_exists='replace', index=True, index_label='id')
-            st.success("Configuração salva com sucesso!")
-            st.rerun()
+        st.header("Composição")
+        st.dataframe(
+            df_portfolio[['ticker', 'quantidade', 'last_price', 'posicao_rs', 'updated_at']],
+            use_container_width=True,
+            column_config={
+                "ticker": "Ativo",
+                "quantidade": "Quantidade",
+                "last_price": st.column_config.NumberColumn("Preço Atual (R$)", format="%.2f"),
+                "posicao_rs": st.column_config.NumberColumn("Posição (R$)", format="R$ %.2f"),
+                "updated_at": st.column_config.DatetimeColumn("Última Atualização", format="HH:mm:ss")
+            }
+        )
     except Exception as e:
-        st.error(f"Erro ao carregar/salvar configuração: {e}")
+        st.error(f"Erro ao carregar dados do portfólio: {e}")
 
-# --- NAVEGAÇÃO PRINCIPAL ---
-st.sidebar.title("Navegação")
-selection = st.sidebar.radio("Ir para", ["Carteira RTD"]) # Adicione outras páginas aqui
-if selection == "Carteira RTD":
-    rtd_portfolio_page()
+# --- Executa a página ---
+rtd_portfolio_page()

@@ -1,7 +1,5 @@
 streamlit
 pandas
-plotly
-altair
 sqlalchemy
 psycopg2-binary
 boto3
