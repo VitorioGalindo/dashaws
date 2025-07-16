@@ -6,4 +6,3 @@ build:
       - pip install -r requirements.txt
 run:
   command: streamlit run app_aws.py --server.port 8080 --server.address 0.0.0.0
-  port: 8080
