@@ -1,6 +1,11 @@
-# requirements.txt (Versão Final e Flexível)
+# requirements.txt (Versão Final e Completa)
 streamlit
 pandas
+numpy
+yfinance
+plotly
+requests
+python-bcb
 sqlalchemy
 psycopg2-binary
 boto3
