@@ -1,4 +1,5 @@
-# streamlit_app/app_aws.py (Versão Final para Streamlit Community Cloud)
+# streamlit_app/app_aws.py (Versão Final com Timeout)
+
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
@@ -11,20 +12,23 @@ st.set_page_config(layout="wide", page_title="Dashboard Financeiro")
 def get_db_engine():
     """Conecta-se ao banco de dados usando o st.secrets."""
     try:
-        # O Streamlit Cloud lê os segredos diretamente do seu painel
         user = st.secrets["database"]["user"]
         password = st.secrets["database"]["password"]
         host = st.secrets["database"]["host"]
         dbname = st.secrets["database"]["dbname"]
-
-        conn_str = f"postgresql+psycopg2://{user}:{password}@{host}/{dbname}?sslmode=require"
+        
+        # ADIÇÃO DO PARÂMETRO DE TIMEOUT
+        conn_str = f"postgresql+psycopg2://{user}:{password}@{host}/{dbname}?sslmode=require&connect_timeout=10"
+        
         engine = create_engine(conn_str)
-
-        with engine.connect():
-            pass
+        
+        # Teste de conexão
+        with engine.connect() as connection:
+            pass # A conexão bem-sucedida já é um teste
+            
         return engine
     except Exception as e:
-        st.error(f"Erro Crítico de Conexão: Não foi possível conectar ao banco. Verifique seus segredos no Streamlit Cloud. Detalhes: {e}")
+        st.error(f"Erro Crítico de Conexão: Não foi possível conectar ao banco. Verifique seus segredos e regras de firewall. Detalhes: {e}")
         st.stop()
 
 engine = get_db_engine()
@@ -37,13 +41,13 @@ def rtd_portfolio_page():
     try:
         df_config = pd.read_sql("SELECT * FROM portfolio_config", engine)
         df_quotes = pd.read_sql("SELECT * FROM realtime_quotes", engine)
-
+        
         if df_config.empty:
             st.warning("Carteira vazia. Adicione ativos no seu banco de dados usando o DBeaver para começar.")
             st.stop()
-
+            
         df_portfolio = pd.merge(df_config, df_quotes, on='ticker', how='left').fillna(0)
-
+        
         if 'quantidade' in df_portfolio.columns and 'last_price' in df_portfolio.columns:
             df_portfolio['posicao_rs'] = df_portfolio['quantidade'] * df_portfolio['last_price']
             total_pl = df_portfolio['posicao_rs'].sum()
@@ -52,7 +56,7 @@ def rtd_portfolio_page():
 
         st.header("Resumo da Carteira")
         st.metric("Patrimônio Total em Ações", f"R$ {total_pl:,.2f}")
-
+        
         st.header("Composição")
         st.dataframe(
             df_portfolio[['ticker', 'quantidade', 'last_price', 'posicao_rs', 'updated_at']],
