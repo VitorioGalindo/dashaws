@@ -1,4 +1,4 @@
-# requirements.txt (Versão Final e Flexível)
+# requirements.txt (Versão Final e Correta)
 streamlit
 pandas
 sqlalchemy
