@@ -1,3 +1,4 @@
+# streamlit_app/requirements.txt (Versão Correta e Limpa)
 streamlit
 pandas
 sqlalchemy
