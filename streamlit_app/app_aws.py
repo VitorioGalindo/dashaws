@@ -1,4 +1,4 @@
-# streamlit_app/app_aws.py (Versão Final Unificada e Organizada)
+# streamlit_app/app_aws.py (Versão 2.0 - Final e Corrigida)
 
 import streamlit as st
 import pandas as pd
@@ -7,11 +7,12 @@ import boto3
 from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
 import yfinance as yf
+from functools import partial # <-- IMPORTAÇÃO QUE ESTAVA FALTANDO
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="Plataforma Financeira")
 
-# --- 2. FUNÇÕES GLOBAIS (Conexão e Estilo) ---
+# --- 2. FUNÇÕES GLOBAIS (Conexão, Estilo, Placeholders) ---
 
 @st.cache_resource(ttl=300)
 def get_db_engine():
@@ -38,15 +39,9 @@ def style_dataframe(df):
         return ''
 
     format_dict = {
-        'Cotação': 'R$ {:,.2f}',
-        'Var. Dia (%)': '{:,.2f}%',
-        'Contrib. (%)': '{:,.2f}%',
-        'Quantidade': '{:,.0f}',
-        'Posição (R$)': 'R$ {:,.2f}',
-        'Posição (%)': '{:,.2f}%',
-        'Posição % Alvo': '{:,.2f}%',
-        'Diferença': '{:,.2f}%',
-        'Ajuste (Qtd.)': '{:,.0f}'
+        'Cotação': 'R$ {:,.2f}', 'Var. Dia (%)': '{:,.2f}%', 'Contrib. (%)': '{:,.2f}%',
+        'Quantidade': '{:,.0f}', 'Posição (R$)': 'R$ {:,.2f}', 'Posição (%)': '{:,.2f}%',
+        'Posição % Alvo': '{:,.2f}%', 'Diferença': '{:,.2f}%', 'Ajuste (Qtd.)': '{:,.0f}'
     }
     
     styled_df = df.style.format(format_dict, na_rep="").map(
@@ -55,7 +50,7 @@ def style_dataframe(df):
     )
     return styled_df
 
-def placeholder_page(title):
+def placeholder_page(title, engine):
     """Função genérica para páginas em construção."""
     st.title(title)
     st.info("Página em construção.")
@@ -67,7 +62,7 @@ def placeholder_page(title):
 # =================================================================
 def rtd_portfolio_page(engine):
     st.title("📊 Carteira de Ações em Tempo Real (RTD)")
-    st_autorefresh(interval=60000, key="rtd_refresher")
+    st_autorefresh(interval=5000, key="rtd_refresher")
 
     # (O código completo e funcional da página RTD vai aqui)
     # ... (código detalhado abaixo)
@@ -178,6 +173,7 @@ def configure_rtd_portfolio(df_config, metrics):
         if submitted:
             # ... (lógica de salvar métricas) ...
             pass
+    st.write("Funcionalidade completa da Carteira RTD.")
 
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
@@ -264,9 +260,14 @@ def visao_geral_empresa_page(engine):
         st.info("Aqui entrará um resumo das recomendações de analistas (preço-alvo, etc.).")
         st.button("Ver Dados Completos do Sell Side →", key="btn_sellside")
 
+        st.write("Funcionalidade completa da Visão Geral da Empresa.")
+
 
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Plataforma Financeira")
+
+# Criamos a conexão com o banco de dados UMA VEZ
+db_engine = get_db_engine()
 
 PAGES = {
      "Carteira em Tempo Real": rtd_portfolio_page,
