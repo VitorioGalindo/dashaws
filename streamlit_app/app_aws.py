@@ -268,17 +268,34 @@ def dados_historicos_page(engine):
     st.title("📂 Dados Históricos")
 
     try:
-        lista_empresas = pd.read_sql("SELECT DISTINCT denom_cia FROM cvm_dados_financeiros ORDER BY denom_cia", engine)['denom_cia'].tolist()
-        if not lista_empresas:
-            st.warning("Nenhum dado da CVM encontrado. Execute o pipeline ETL para popular os dados.")
+        # Carrega a nova lista mestra de empresas
+        df_empresas = pd.read_sql("SELECT tickers, denom_cia FROM dim_empresas", engine)
+        if df_empresas.empty:
+            st.warning("Lista mestra de empresas está vazia. Execute o script 'criar_lista_empresas.py' na VM.")
             return
-    except Exception:
-        st.info("Tabela 'cvm_dados_financeiros' não populada. Execute o pipeline ETL na sua VM.")
+    except Exception as e:
+        st.error(f"Erro ao buscar lista de empresas: {e}")
+        st.info("É provável que a tabela 'dim_empresas' ainda não exista ou esteja vazia.")
         return
 
-    empresa_selecionada = st.selectbox("Selecione a Empresa", options=lista_empresas)
-    if not empresa_selecionada: return
+    # --- Cria a lista de seleção (Ticker - Nome da Empresa) ---
+    ticker_map = {}
+    lista_selecao = []
+    for _, row in df_empresas.iterrows():
+        for ticker in row['tickers']:
+            display_name = f"{ticker} - {row['denom_cia']}"
+            lista_selecao.append(display_name)
+            ticker_map[display_name] = row['denom_cia']
 
+    selecao_display = st.selectbox("Selecione a Empresa pelo Ticker", options=sorted(lista_selecao))
+    
+    if not selecao_display:
+        return
+
+    # Pega o nome completo da empresa a partir da seleção do ticker
+    empresa_selecionada = ticker_map[selecao_display]
+    
+    # O resto da lógica da página permanece quase idêntico
     cols_filtros = st.columns(4)
     periodo = cols_filtros[0].radio("Período", ["Anual", "Trimestral"], horizontal=True, key="periodo")
     unidade = cols_filtros[1].radio("Valores em", ["Milhares", "Milhões"], horizontal=True, key="unidade")
