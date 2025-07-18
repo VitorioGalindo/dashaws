@@ -65,7 +65,7 @@ def placeholder_page(title):
 # =================================================================
 # PÁGINA 1: CARTEIRA EM TEMPO REAL (RTD)
 # =================================================================
-def rtd_portfolio_page():
+def rtd_portfolio_page(engine):
     st.title("📊 Carteira de Ações em Tempo Real (RTD)")
     st_autorefresh(interval=60000, key="rtd_refresher")
 
@@ -182,7 +182,7 @@ def configure_rtd_portfolio(df_config, metrics):
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
 # =================================================================
-def visao_geral_empresa_page():
+def visao_geral_empresa_page(engine):
     st.title("Visão Geral da Empresa (Overview)")
 
     # --- Widget de Seleção de Ativo ---
@@ -269,16 +269,26 @@ def visao_geral_empresa_page():
 st.sidebar.title("Plataforma Financeira")
 
 PAGES = {
-    "Carteira em Tempo Real": rtd_portfolio_page,
+     "Carteira em Tempo Real": rtd_portfolio_page,
     "Visão Geral da Empresa (Overview)": visao_geral_empresa_page,
-    "Dados Históricos": lambda: placeholder_page("📂 Dados Históricos"),
-    "Comparador de Empresas": lambda: placeholder_page("⚖️ Comparador de Empresas"),
-    "Radar de Insiders (CVM 44)": lambda: placeholder_page("📡 Radar de Insiders (CVM 44)"),
-    "Pesquisa (Research/Estudos)": lambda: placeholder_page("🔬 Pesquisa (Research/Estudos)"),
+    "Dados Históricos": partial(placeholder_page, "📂 Dados Históricos"),
+    "Comparador de Empresas": partial(placeholder_page, "⚖️ Comparador de Empresas"),
+    "Radar de Insiders (CVM 44)": partial(placeholder_page, "📡 Radar de Insiders (CVM 44)"),
+    "Pesquisa (Research/Estudos)": partial(placeholder_page, "🔬 Pesquisa (Research/Estudos)"),
+    "Notícias da Empresa": partial(placeholder_page, "📰 Notícias da Empresa"),
+    "Documentos CVM": partial(placeholder_page, "📄 Documentos CVM"),
+    "Dados do Sell Side": partial(placeholder_page, "📈 Dados do Sell Side"),
+    "Notícias do Mercado": partial(placeholder_page, "🌎 Notícias do Mercado"),
+    "Visão Geral Do Mercado": partial(placeholder_page, "🌐 Visão Geral Do Mercado"),
+    "Dados Macro": partial(placeholder_page, "💹 Dados Macro"),
+    "Curva de Juros": partial(placeholder_page, "➿ Curva de Juros"),
+    "Screening Fundamentalista": partial(placeholder_page, "🔍 Screening Fundamentalista"),
+    "Dados de Fluxo": partial(placeholder_page, "🌊 Dados de Fluxo"),
     # Adicione as outras novas páginas aqui como placeholders
 }
 
 selection = st.sidebar.radio("Navegar para", list(PAGES.keys()))
 
 page_function = PAGES[selection]
-page_function()
+# Executa a função da página selecionada, passando a conexão com o banco
+page_function(engine=db_engine)
