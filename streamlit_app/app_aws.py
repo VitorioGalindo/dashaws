@@ -267,75 +267,78 @@ def visao_geral_empresa_page(engine):
 def dados_historicos_page(engine):
     st.title("📂 Dados Históricos")
 
-    # --- Widget de Seleção de Ativo ---
     try:
-        # Pega a lista de empresas que temos no banco de dados
         lista_empresas = pd.read_sql("SELECT DISTINCT denom_cia FROM cvm_dados_financeiros ORDER BY denom_cia", engine)['denom_cia'].tolist()
         if not lista_empresas:
-            st.warning("Nenhum dado da CVM encontrado no banco. Execute o pipeline ETL para popular os dados.")
+            st.warning("Nenhum dado da CVM encontrado. Execute o pipeline ETL para popular os dados.")
             return
-    except Exception as e:
-        st.error(f"Erro ao buscar lista de empresas: {e}")
-        st.info("É provável que a tabela 'cvm_dados_financeiros' ainda não exista. Execute o script SQL de criação e o pipeline ETL.")
+    except Exception:
+        st.info("Tabela 'cvm_dados_financeiros' não populada. Execute o pipeline ETL na sua VM.")
         return
 
     empresa_selecionada = st.selectbox("Selecione a Empresa", options=lista_empresas)
+    if not empresa_selecionada: return
 
-    if not empresa_selecionada:
-        return
-
-    # --- Filtros ---
     cols_filtros = st.columns(4)
-    periodo = cols_filtros[0].radio("Período", ["Anual", "Trimestral"], horizontal=True)
-    unidade = cols_filtros[1].radio("Valores em", ["Milhares", "Milhões", "Bilhões"], horizontal=True)
-    
-    divisor = 1
-    if unidade == "Milhões":
-        divisor = 1000
-    elif unidade == "Bilhões":
-        divisor = 1000000
+    periodo = cols_filtros[0].radio("Período", ["Anual", "Trimestral"], horizontal=True, key="periodo")
+    unidade = cols_filtros[1].radio("Valores em", ["Milhares", "Milhões"], horizontal=True, key="unidade")
+    divisor = 1000 if unidade == "Milhões" else 1
 
-    # --- Busca dos Dados da Empresa Selecionada ---
-    query = text("SELECT * FROM cvm_dados_financeiros WHERE denom_cia = :empresa AND periodo = :periodo AND ordem_exerc = 'ÚLTIMO'")
+    # --- Busca dos Dados ---
+    query = text("SELECT * FROM cvm_dados_financeiros WHERE denom_cia = :empresa AND periodo = :periodo")
     df_empresa = pd.read_sql(query, engine, params={"empresa": empresa_selecionada, "periodo": periodo.upper()})
+    df_empresa['dt_fim_exerc'] = pd.to_datetime(df_empresa['dt_fim_exerc'])
 
-    # --- Abas para cada Demonstrativo ---
     tab_dre, tab_bp, tab_fc, tab_indicadores = st.tabs(["Histórico de DRE", "Balanço Patrimonial", "Fluxo de Caixa", "Indicadores e Múltiplos"])
 
+    # --- Função auxiliar para criar e ordenar as tabelas ---
+    def criar_pivot_table(df, tipo_demo):
+        df_demo = df[df['tipo_demonstracao'] == tipo_demo]
+        if df_demo.empty: return pd.DataFrame()
+        # Ordena pelo código da conta para manter a ordem contábil
+        df_pivot = df_demo.pivot_table(index=['cd_conta', 'ds_conta'], columns='dt_fim_exerc', values='vl_conta').div(divisor)
+        df_pivot.index = df_pivot.index.droplevel('cd_conta') # Remove o código da exibição
+        return df_pivot
+
     with tab_dre:
-        st.subheader("Demonstração do Resultado (DRE)")
-        df_dre = df_empresa[df_empresa['tipo_demonstracao'] == 'DRE']
-        if not df_dre.empty:
-            df_dre_pivot = df_dre.pivot_table(index='ds_conta', columns='dt_fim_exerc', values='vl_conta').div(divisor).sort_index()
-            st.dataframe(df_dre_pivot.style.format("{:,.2f}"))
-            st.download_button("Baixar DRE", df_dre_pivot.to_csv(), f"DRE_{empresa_selecionada}.csv")
-        else:
-            st.info("Dados de DRE não disponíveis para esta empresa/período.")
+        df_dre_pivot = criar_pivot_table(df_empresa, 'DRE')
+        if not df_dre_pivot.empty:
+            st.dataframe(df_dre_pivot.style.format("{:,.0f}"))
+        else: st.info("Dados de DRE não disponíveis para esta empresa/período.")
 
     with tab_bp:
-        st.subheader("Balanço Patrimonial (BP)")
-        df_bpa = df_empresa[df_empresa['tipo_demonstracao'] == 'BPA'] # Ativo
-        df_bpp = df_empresa[df_empresa['tipo_demonstracao'] == 'BPP'] # Passivo
-        if not df_bpa.empty and not df_bpp.empty:
-            df_bp = pd.concat([df_bpa, df_bpp])
-            df_bp_pivot = df_bp.pivot_table(index='ds_conta', columns='dt_fim_exerc', values='vl_conta').div(divisor).sort_index()
-            st.dataframe(df_bp_pivot.style.format("{:,.2f}"))
-            st.download_button("Baixar BP", df_bp_pivot.to_csv(), f"BP_{empresa_selecionada}.csv")
-        else:
-            st.info("Dados de Balanço Patrimonial não disponíveis para esta empresa/período.")
-
+        df_bpa_pivot = criar_pivot_table(df_empresa, 'BPA') # Ativo
+        df_bpp_pivot = criar_pivot_table(df_empresa, 'BPP') # Passivo
+        if not df_bpa_pivot.empty:
+            st.subheader("Ativo")
+            st.dataframe(df_bpa_pivot.style.format("{:,.0f}"))
+        if not df_bpp_pivot.empty:
+            st.subheader("Passivo e Patrimônio Líquido")
+            st.dataframe(df_bpp_pivot.style.format("{:,.0f}"))
+        if df_bpa_pivot.empty and df_bpp_pivot.empty:
+            st.info("Dados de Balanço Patrimonial não disponíveis.")
+    
     with tab_fc:
-        st.subheader("Demonstração do Fluxo de Caixa (DFC)")
-        df_fc = df_empresa[df_empresa['tipo_demonstracao'] == 'DFC']
-        if not df_fc.empty:
-            df_fc_pivot = df_fc.pivot_table(index='ds_conta', columns='dt_fim_exerc', values='vl_conta').div(divisor).sort_index()
-            st.dataframe(df_fc_pivot.style.format("{:,.2f}"))
-            st.download_button("Baixar DFC", df_fc_pivot.to_csv(), f"DFC_{empresa_selecionada}.csv")
-        else:
-            st.info("Dados de Fluxo de Caixa não disponíveis para esta empresa/período.")
-            
+        df_fc_pivot = criar_pivot_table(df_empresa, 'DFC')
+        if not df_fc_pivot.empty:
+            st.dataframe(df_fc_pivot.style.format("{:,.0f}"))
+        else: st.info("Dados de Fluxo de Caixa não disponíveis.")
+
     with tab_indicadores:
-        st.info("A funcionalidade de cálculo de indicadores e múltiplos será adicionada aqui.")
+        st.subheader("Indicadores e Múltiplos (Em Desenvolvimento)")
+        # Lógica para buscar os dados necessários (ex: Lucro Líquido, PL, etc.)
+        try:
+            lucro_liquido = df_empresa[(df_empresa['cd_conta'] == '3.99.01') & (df_empresa['tipo_demonstracao'] == 'DRE')].set_index('dt_fim_exerc')['vl_conta']
+            patrimonio_liquido = df_empresa[(df_empresa['cd_conta'] == '2.03') & (df_empresa['tipo_demonstracao'] == 'BPP')].set_index('dt_fim_exerc')['vl_conta']
+            
+            if not lucro_liquido.empty and not patrimonio_liquido.empty:
+                roe = (lucro_liquido / patrimonio_liquido) * 100
+                st.write("ROE (Retorno sobre o Patrimônio Líquido)")
+                st.line_chart(roe)
+            else:
+                st.info("Dados insuficientes para calcular ROE.")
+        except Exception as e:
+            st.error(f"Erro ao calcular indicadores: {e}")
 
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Plataforma Financeira")
