@@ -403,6 +403,66 @@ def dados_historicos_page(engine):
         except Exception as e:
             st.error(f"Erro ao calcular indicadores: {e}")
 
+# =================================================================
+# NOVA PÁGINA: Documentos CVM
+# =================================================================
+def documentos_cvm_page(engine):
+    st.title("📄 Documentos CVM")
+
+    try:
+        df_empresas = pd.read_sql("SELECT DISTINCT nome_companhia FROM cvm_documentos_ipe ORDER BY nome_companhia", engine)
+        lista_empresas = ["Todas"] + df_empresas['nome_companhia'].tolist()
+        
+        df_categorias = pd.read_sql("SELECT DISTINCT categoria FROM cvm_documentos_ipe ORDER BY categoria", engine)
+        lista_categorias = ["Todas"] + df_categorias['categoria'].tolist()
+
+    except Exception as e:
+        st.error("Erro ao carregar os filtros. Execute o pipeline de ETL dos documentos IPE.")
+        return
+
+    # --- Filtros ---
+    st.subheader("Filtros")
+    cols_filtros = st.columns(2)
+    empresa_selecionada = cols_filtros[0].selectbox("Filtrar por Empresa", options=lista_empresas)
+    categoria_selecionada = cols_filtros[1].selectbox("Filtrar por Categoria de Documento", options=lista_categorias)
+
+    # --- Construção da Query ---
+    query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
+    params = {}
+    conditions = []
+
+    if empresa_selecionada != "Todas":
+        conditions.append("nome_companhia = :empresa")
+        params["empresa"] = empresa_selecionada
+    
+    if categoria_selecionada != "Todas":
+        conditions.append("categoria = :categoria")
+        params["categoria"] = categoria_selecionada
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    query += " ORDER BY data_entrega DESC LIMIT 100" # Limita a 100 resultados para performance
+
+    df_documentos = pd.read_sql(text(query), engine, params=params)
+
+    st.markdown("---")
+    st.subheader(f"Exibindo {len(df_documentos)} documentos encontrados")
+
+    # --- Exibição da Lista ---
+    if not df_documentos.empty:
+        for _, row in df_documentos.iterrows():
+            with st.container(border=True):
+                cols_doc = st.columns([4, 1])
+                with cols_doc[0]:
+                    st.markdown(f"**{row['nome_companhia']}**")
+                    st.caption(f"Entregue em: {pd.to_datetime(row['data_entrega']).strftime('%d/%m/%Y')} | Categoria: {row['categoria']}")
+                    st.write(row['assunto'])
+                with cols_doc[1]:
+                    st.link_button("Abrir Documento 📄", row['link_download'], use_container_width=True)
+    else:
+        st.info("Nenhum documento encontrado com os filtros selecionados.")
+
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Plataforma Financeira")
 
@@ -417,7 +477,7 @@ PAGES = {
     "Radar de Insiders (CVM 44)": partial(placeholder_page, "📡 Radar de Insiders (CVM 44)"),
     "Pesquisa (Research/Estudos)": partial(placeholder_page, "🔬 Pesquisa (Research/Estudos)"),
     "Notícias da Empresa": partial(placeholder_page, "📰 Notícias da Empresa"),
-    "Documentos CVM": partial(placeholder_page, "📄 Documentos CVM"),
+    "Documentos CVM": documentos_cvm_page,
     "Dados do Sell Side": partial(placeholder_page, "📈 Dados do Sell Side"),
     "Notícias do Mercado": partial(placeholder_page, "🌎 Notícias do Mercado"),
     "Visão Geral Do Mercado": partial(placeholder_page, "🌐 Visão Geral Do Mercado"),
