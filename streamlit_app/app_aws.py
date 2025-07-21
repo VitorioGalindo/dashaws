@@ -87,6 +87,7 @@ def rtd_portfolio_page(engine):
         metrics_resp = pd.read_sql("SELECT * FROM portfolio_metrics", engine)
         df_hist = pd.read_sql("SELECT data, cota, ibov FROM portfolio_history ORDER BY data ASC", engine)
         df_empresas = pd.read_sql("SELECT tickers, denom_cia FROM dim_empresas", engine)
+        st.write(f"DEBUG: 2. Dados carregados. df_config tem {len(df_config)} linhas. df_empresas tem {len(df_empresas)} linhas.")    
     except Exception as e:
         st.error(f"Erro ao carregar dados do banco: {e}")
         return
@@ -239,24 +240,29 @@ def configure_rtd_portfolio(df_config, metrics, engine, df_empresas):
                 st.error(f"Erro ao salvar métricas: {e}")
  
     # --- SEÇÃO ATUALIZADA: DOCUMENTOS RECENTES DA CARTEIRA ---
+     
+    # --- SEÇÃO DE DEBUG: DOCUMENTOS RECENTES DA CARTEIRA ---
     st.markdown("---")
     st.subheader("Documentos Recentes da Carteira (Últimos 7 dias)")
 
     if not df_config.empty:
-        # 1. Cria um mapa de ticker para nome da empresa
+        st.write("DEBUG: 3. Entrou no bloco 'if not df_config.empty'.")
+        
         ticker_to_name_map = {}
         for _, row in df_empresas.iterrows():
-            # A coluna 'tickers' é uma lista, então iteramos sobre ela
             if row['tickers']:
                 for ticker in row['tickers']:
-                    ticker_to_name_map[ticker] = row['denom_cia']
-
-        # 2. Obtém a lista de nomes de empresas da carteira atual
+                    ticker_to_name_map[ticker.strip().upper()] = row['denom_cia']
+        
+        st.write("DEBUG: 4. Mapa de tickers para nomes foi criado.")
+        
         nomes_empresas_carteira = [ticker_to_name_map.get(ticker.strip().upper()) for ticker in df_config['ticker'] if ticker_to_name_map.get(ticker.strip().upper())]
         nomes_empresas_unicos = list(set(nomes_empresas_carteira))
+        
+        st.write(f"DEBUG: 5. Nomes de empresas únicos encontrados na carteira: {nomes_empresas_unicos}")
 
         if nomes_empresas_unicos:
-            # 3. Busca os documentos para essas empresas nos últimos 7 dias
+            st.write("DEBUG: 6. Encontrou empresas na carteira, vai buscar documentos...")
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=7)
             
@@ -272,36 +278,21 @@ def configure_rtd_portfolio(df_config, metrics, engine, df_empresas):
                 "start_date": start_date,
                 "end_date": end_date
             })
+            st.write(f"DEBUG: 7. Query executada, {len(df_documentos)} documentos encontrados.")
 
-            # 4. Exibe o "Alerta" e a tabela
             if not df_documentos.empty:
-                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s) para empresas da sua carteira nos últimos 7 dias!")
-                
-                df_display = df_documentos.rename(columns={
-                    'data_entrega': 'Data', 'nome_companhia': 'Empresa',
-                    'categoria': 'Categoria', 'assunto': 'Assunto'
-                })
-                
-                st.dataframe(
-                    df_display,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                        "link_download": st.column_config.LinkColumn("Link", display_text="Abrir 📄")
-                    },
-                    column_order=["Data", "Empresa", "Categoria", "Assunto", "link_download"]
-                )
+                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s)!")
+                # (código de exibição da tabela)
             else:
                 st.info("Nenhum novo documento encontrado para as empresas da sua carteira nos últimos 7 dias.")
         else:
-            # Mensagem de Debug caso a correspondência falhe
-            st.warning("Não foi possível encontrar os nomes das empresas correspondentes aos tickers na sua carteira.")
-            with st.expander("Detalhes de Debug"):
-                st.write("Tickers na sua carteira (`portfolio_config`):", df_config['ticker'].tolist())
-                st.write("Mapa de Tickers para Nomes (`dim_empresas`):", ticker_to_name_map)
+            st.warning("AVISO: Não foi possível encontrar os nomes das empresas correspondentes aos tickers na sua carteira.")
+            with st.expander("Clique aqui para ver detalhes do debug"):
+                st.write("**Tickers na sua carteira (tabela `portfolio_config`):**", df_config['ticker'].tolist())
+                st.write("**Mapa de Tickers para Nomes (tabela `dim_empresas` - amostra):**", dict(list(ticker_to_name_map.items())[:10]))
     else:
         st.info("Adicione ativos à sua carteira para ver os documentos recentes.")
+
 
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
