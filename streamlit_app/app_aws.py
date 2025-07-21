@@ -153,27 +153,73 @@ def rtd_portfolio_page(engine):
             configure_rtd_portfolio(df_config, metrics)
             
 def configure_rtd_portfolio(df_config, metrics):
+    """Renderiza os componentes para gerenciar ativos e métricas."""
+    
+    # --- SEÇÃO PARA GERENCIAR ATIVOS ---
     st.subheader("Gerenciar Ativos da Carteira")
-    edited_df = st.data_editor(df_config[['ticker', 'quantidade', 'posicao_alvo']], num_rows="dynamic", key="asset_editor", use_container_width=True)
+    st.info("Adicione, edite ou remova linhas. Depois, clique em 'Salvar Carteira'.")
+    
+    # Prepara o dataframe para edição, garantindo que o index 'id' seja mantido
+    if 'id' in df_config.columns:
+        df_edit = df_config.set_index('id')
+    else:
+        df_edit = df_config # Fallback para o caso de a tabela estar vazia
+        
+    edited_df = st.data_editor(
+        df_edit[['ticker', 'quantidade', 'posicao_alvo']], 
+        num_rows="dynamic", 
+        key="asset_editor", 
+        use_container_width=True
+    )
+    
     if st.button("Salvar Carteira"):
         try:
+            # Reseta o índice para que a coluna 'id' volte a ser uma coluna normal
+            df_to_save = edited_df.reset_index()
             with engine.connect() as conn:
+                # Limpa a tabela para sincronizar (deletar linhas removidas)
                 conn.execute(text("TRUNCATE TABLE portfolio_config RESTART IDENTITY;"))
-                edited_df.to_sql('portfolio_config', conn, if_exists='append', index=False)
+                # Insere o dataframe editado
+                df_to_save.to_sql('portfolio_config', conn, if_exists='append', index=False)
                 conn.commit()
             st.success("Carteira salva com sucesso!")
             st.rerun()
         except Exception as e:
             st.error(f"Erro ao salvar carteira: {e}")
-    
+            
+    st.markdown("---") # Divisor visual
+
+    # --- SEÇÃO PARA EDITAR MÉTRICAS DIÁRIAS (RESTAURADA) ---
     st.subheader("Editar Métricas Diárias")
     with st.form("metrics_form"):
-        # ... (código do formulário de métricas) ...
+        cota_d1_val = st.number_input("Cota D-1", value=float(metrics.get('cota_d1', 1.0)), format="%.4f")
+        qtd_cotas_val = st.number_input("Quantidade de Cotas", value=int(metrics.get('quantidade_cotas', 1)), step=1)
+        caixa_val = st.number_input("Caixa Bruto", value=float(metrics.get('caixa_bruto', 0.0)), format="%.2f")
+        outros_val = st.number_input("Outros", value=float(metrics.get('outros', 0.0)), format="%.2f")
+        outras_despesas_val = st.number_input("Outras Despesas", value=float(metrics.get('outras_despesas', 0.0)), format="%.2f")
+        
         submitted = st.form_submit_button("Atualizar Métricas")
+        
         if submitted:
-            # ... (lógica de salvar métricas) ...
-            pass
-    st.write("Funcionalidade completa da Carteira RTD.")
+            try:
+                metrics_to_upsert = [
+                    {"metric_key": "cota_d1", "metric_value": cota_d1_val}, 
+                    {"metric_key": "quantidade_cotas", "metric_value": qtd_cotas_val},
+                    {"metric_key": "caixa_bruto", "metric_value": caixa_val}, 
+                    {"metric_key": "outros", "metric_value": outros_val},
+                    {"metric_key": "outras_despesas", "metric_value": outras_despesas_val}
+                ]
+                with engine.connect() as conn:
+                    for item in metrics_to_upsert:
+                        conn.execute(text("""
+                            INSERT INTO portfolio_metrics (metric_key, metric_value) VALUES (:k, :v)
+                            ON CONFLICT (metric_key) DO UPDATE SET metric_value = :v;
+                        """), {"k": item['metric_key'], "v": item['metric_value']})
+                    conn.commit()
+                st.success("Métricas salvas com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar métricas: {e}")
 
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
