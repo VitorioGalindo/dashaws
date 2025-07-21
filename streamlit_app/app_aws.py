@@ -150,7 +150,7 @@ def rtd_portfolio_page(engine):
         st.markdown(f"**Exposição Total:** `{exposicao_total:.2%}`")
         st.markdown("---")
         with st.expander("Gerenciar Ativos e Métricas"):
-            configure_rtd_portfolio(df_config, metrics)
+            configure_rtd_portfolio(df_config, metrics, engine)
             
 def configure_rtd_portfolio(df_config, metrics, engine):
     """Renderiza os componentes para gerenciar ativos e métricas."""
