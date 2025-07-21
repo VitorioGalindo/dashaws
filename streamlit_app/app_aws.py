@@ -404,7 +404,7 @@ def dados_historicos_page(engine):
             st.error(f"Erro ao calcular indicadores: {e}")
 
 # =================================================================
-# NOVA PÁGINA: Documentos CVM
+# PÁGINA: Documentos CVM (VERSÃO MELHORADA COM TABELA E FILTROS)
 # =================================================================
 def documentos_cvm_page(engine):
     st.title("📄 Documentos CVM")
@@ -422,14 +422,37 @@ def documentos_cvm_page(engine):
 
     # --- Filtros ---
     st.subheader("Filtros")
-    cols_filtros = st.columns(2)
+    cols_filtros = st.columns(3)
     empresa_selecionada = cols_filtros[0].selectbox("Filtrar por Empresa", options=lista_empresas)
-    categoria_selecionada = cols_filtros[1].selectbox("Filtrar por Categoria de Documento", options=lista_categorias)
+    categoria_selecionada = cols_filtros[1].selectbox("Filtrar por Categoria", options=lista_categorias)
+    
+    # --- NOVO: Filtro de Data ---
+    with cols_filtros[2]:
+        # Define um período padrão de 90 dias
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=90)
+        
+        date_range = st.date_input(
+            "Filtrar por Período de Publicação",
+            value=(start_date, end_date),
+            min_value=date(2010, 1, 1),
+            max_value=end_date
+        )
+    
+    # Garante que temos um início e um fim para o período
+    try:
+        start_date_filter, end_date_filter = date_range
+    except ValueError:
+        st.warning("Por favor, selecione um intervalo de datas válido (início e fim).")
+        st.stop()
 
     # --- Construção da Query ---
     query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
-    params = {}
-    conditions = []
+    params = {
+        "start_date": start_date_filter,
+        "end_date": end_date_filter
+    }
+    conditions = ["data_entrega BETWEEN :start_date AND :end_date"]
 
     if empresa_selecionada != "Todas":
         conditions.append("nome_companhia = :empresa")
@@ -442,27 +465,43 @@ def documentos_cvm_page(engine):
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     
-    query += " ORDER BY data_entrega DESC LIMIT 100" # Limita a 100 resultados para performance
+    # Ordena por padrão pela data mais recente
+    query += " ORDER BY data_entrega DESC"
 
     df_documentos = pd.read_sql(text(query), engine, params=params)
 
     st.markdown("---")
     st.subheader(f"Exibindo {len(df_documentos)} documentos encontrados")
 
-    # --- Exibição da Lista ---
+    # --- NOVO: Exibição em Tabela ---
     if not df_documentos.empty:
-        for _, row in df_documentos.iterrows():
-            with st.container(border=True):
-                cols_doc = st.columns([4, 1])
-                with cols_doc[0]:
-                    st.markdown(f"**{row['nome_companhia']}**")
-                    st.caption(f"Entregue em: {pd.to_datetime(row['data_entrega']).strftime('%d/%m/%Y')} | Categoria: {row['categoria']}")
-                    st.write(row['assunto'])
-                with cols_doc[1]:
-                    st.link_button("Abrir Documento 📄", row['link_download'], use_container_width=True)
+        # Renomeia as colunas para a exibição
+        df_display = df_documentos.rename(columns={
+            'data_entrega': 'Data de Publicação',
+            'nome_companhia': 'Empresa',
+            'categoria': 'Categoria',
+            'tipo': 'Tipo',
+            'assunto': 'Assunto'
+        })
+
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Data de Publicação": st.column_config.DateColumn(
+                    "Data de Publicação",
+                    format="DD/MM/YYYY",
+                ),
+                "link_download": st.column_config.LinkColumn(
+                    "Link",
+                    display_text="Abrir 📄"
+                )
+            }
+        )
     else:
         st.info("Nenhum documento encontrado com os filtros selecionados.")
-
+        
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Plataforma Financeira")
 
