@@ -57,21 +57,7 @@ def placeholder_page(title, engine):
     """Função genérica para páginas em construção."""
     st.title(title)
     st.info("Página em construção.")
-    
-@st.cache_data(ttl=3600)
-def get_pdf_from_url(url):
-    """Baixa o conteúdo de um PDF de uma URL, simulando um navegador."""
-    try:
-        # --- CORREÇÃO APLICADA AQUI: Adiciona um User-Agent ---
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(url, timeout=30, headers=headers)
-        response.raise_for_status()
-        return response.content
-    except requests.exceptions.RequestException as e:
-        st.error(f"Não foi possível baixar o PDF: {e}")
-        return None
+   
 
 
 # --- 3. FUNÇÕES DE CADA PÁGINA DO DASHBOARD ---
@@ -421,13 +407,13 @@ def dados_historicos_page(engine):
                 st.info("Dados insuficientes para calcular ROE.")
         except Exception as e:
             st.error(f"Erro ao calcular indicadores: {e}")
+            
 # =================================================================
-# PÁGINA: Documentos CVM (VERSÃO CORRIGIDA)
+# PÁGINA: Documentos CVM (VERSÃO FINAL COM TABELA)
 # =================================================================
 def documentos_cvm_page(engine):
     st.title("📄 Documentos CVM")
 
-    # --- Lógica dos Filtros (como antes) ---
     try:
         df_empresas = pd.read_sql("SELECT tickers, denom_cia FROM dim_empresas", engine)
         df_categorias = pd.read_sql("SELECT DISTINCT categoria FROM cvm_documentos_ipe ORDER BY categoria", engine)
@@ -435,6 +421,7 @@ def documentos_cvm_page(engine):
         st.error(f"Erro ao carregar filtros. Execute os pipelines ETL. Detalhes: {e}")
         return
 
+    # --- Cria a lista de seleção (Ticker - Nome da Empresa) ---
     ticker_map = {"Todas as Empresas": "Todas"}
     lista_selecao = ["Todas as Empresas"]
     for _, row in df_empresas.iterrows():
@@ -443,6 +430,7 @@ def documentos_cvm_page(engine):
             lista_selecao.append(display_name)
             ticker_map[display_name] = row['denom_cia']
 
+    # --- Filtros ---
     st.subheader("Filtros")
     cols_filtros = st.columns(3)
     selecao_display = cols_filtros[0].selectbox("Filtrar por Empresa", options=sorted(lista_selecao))
@@ -457,12 +445,12 @@ def documentos_cvm_page(engine):
         date_range = st.date_input("Filtrar por Período de Publicação", value=(start_date, end_date))
     
     if len(date_range) != 2:
-        st.warning("Por favor, selecione um intervalo de datas válido (início e fim).")
+        st.warning("Por favor, selecione um intervalo de datas válido.")
         st.stop()
     start_date_filter, end_date_filter = date_range
 
-    # --- Construção da Query (como antes) ---
-    query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
+    # --- Construção da Query ---
+    query = "SELECT data_entrega, nome_companhia, categoria, assunto, link_download FROM cvm_documentos_ipe"
     params = {"start_date": start_date_filter, "end_date": end_date_filter}
     conditions = ["data_entrega BETWEEN :start_date AND :end_date"]
     if empresa_selecionada != "Todas":
@@ -473,54 +461,41 @@ def documentos_cvm_page(engine):
         params["categoria"] = categoria_selecionada
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY data_entrega DESC LIMIT 100"
+    query += " ORDER BY data_entrega DESC" # Ordena por data por padrão
+    
     df_documentos = pd.read_sql(text(query), engine, params=params)
 
     st.markdown("---")
-    st.subheader(f"Documentos Encontrados ({len(df_documentos)})")
+    st.subheader(f"Exibindo {len(df_documentos)} documentos encontrados")
 
-    # --- CORREÇÃO DE LAYOUT: Formato de Tabela ---
-    # Cria um cabeçalho para a nossa lista
-    header_cols = st.columns([1, 3, 4, 1])
-    header_cols[0].markdown("**Data**")
-    header_cols[1].markdown("**Empresa**")
-    header_cols[2].markdown("**Categoria / Assunto**")
-    header_cols[3].markdown("**Visualizar**")
-
+    # --- Exibição em Tabela Interativa ---
     if not df_documentos.empty:
-        for index, row in df_documentos.iterrows():
-            row_cols = st.columns([1, 3, 4, 1])
-            with row_cols[0]:
-                st.write(pd.to_datetime(row['data_entrega']).strftime('%d/%m/%Y'))
-            with row_cols[1]:
-                st.write(row['nome_companhia'])
-            with row_cols[2]:
-                st.write(f"**{row['categoria']}** - {row['assunto']}")
-            with row_cols[3]:
-                if st.button("Ver 📄", key=f"doc_{index}", use_container_width=True):
-                    st.session_state['selected_pdf_url'] = row['link_download']
-                    st.session_state['selected_pdf_name'] = f"{row['nome_companhia']}_{row['data_entrega']}.pdf"
+        df_display = df_documentos.rename(columns={
+            'data_entrega': 'Data',
+            'nome_companhia': 'Empresa',
+            'categoria': 'Categoria',
+            'assunto': 'Assunto'
+        })
+        
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Data": st.column_config.DateColumn(
+                    "Data",
+                    format="DD/MM/YYYY",
+                ),
+                "link_download": st.column_config.LinkColumn(
+                    "Link",
+                    display_text="Abrir 📄",
+                    width="small"
+                )
+            },
+            column_order=["Data", "Empresa", "Categoria", "Assunto", "link_download"]
+        )
     else:
         st.info("Nenhum documento encontrado com os filtros selecionados.")
-        
-    st.markdown("---")
-
-    # --- CORREÇÃO DE LAYOUT: Visualizador de Documento EMBAIXO ---
-    st.subheader("Visualizador de Documento")
-    if 'selected_pdf_url' in st.session_state and st.session_state['selected_pdf_url']:
-        pdf_url = st.session_state['selected_pdf_url']
-        pdf_name = st.session_state.get('selected_pdf_name', 'documento_cvm.pdf')
-        
-        with st.spinner("Carregando documento PDF..."):
-            pdf_content = get_pdf_from_url(pdf_url)
-        
-        if pdf_content:
-            st.download_button(label="Baixar Documento 📥", data=pdf_content, file_name=pdf_name, mime="application/pdf")
-            base64_pdf = base64.b64encode(pdf_content).decode('utf-8')
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-    else:
-        st.info("Clique em 'Ver 📄' em um documento da lista acima para visualizá-lo aqui.")
 
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Dashboard de Análise e Gerenciamento da Carteira - Apex - Clube Agathos")
