@@ -58,6 +58,18 @@ def placeholder_page(title, engine):
     st.title(title)
     st.info("Página em construção.")
    
+@st.cache_data(ttl=3600)
+def get_pdf_from_url(url):
+    """Baixa o conteúdo de um PDF de uma URL, simulando um navegador."""
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, timeout=30, headers=headers)
+        response.raise_for_status()
+        return response.content
+    except requests.exceptions.RequestException as e:
+        st.error(f"Não foi possível baixar o PDF: {e}")
+        return None
+
 
 
 # --- 3. FUNÇÕES DE CADA PÁGINA DO DASHBOARD ---
@@ -70,19 +82,18 @@ def rtd_portfolio_page(engine):
     st_autorefresh(interval=60000, key="rtd_refresher")
 
     try:
-        # Busca todos os dados necessários em paralelo
         df_config = pd.read_sql("SELECT * FROM portfolio_config", engine, index_col='id')
         df_quotes = pd.read_sql("SELECT * FROM realtime_quotes", engine)
         metrics_resp = pd.read_sql("SELECT * FROM portfolio_metrics", engine)
         df_hist = pd.read_sql("SELECT data, cota, ibov FROM portfolio_history ORDER BY data ASC", engine)
-        # Busca a lista mestra para mapear ticker para nome da empresa
         df_empresas = pd.read_sql("SELECT tickers, denom_cia FROM dim_empresas", engine)
     except Exception as e:
         st.error(f"Erro ao carregar dados do banco: {e}")
         return
 
+# --- Lógica principal da página ---
     metrics = {item['metric_key']: item['metric_value'] for item in metrics_resp.to_dict('records')}
-    cota_d1 = metrics.get('cota_d1', 1.0)
+        cota_d1 = metrics.get('cota_d1', 1.0)
     qtd_cotas = metrics.get('quantidade_cotas', 1)
     caixa_bruto = metrics.get('caixa_bruto', 0.0)
     outros = metrics.get('outros', 0.0)
@@ -232,57 +243,33 @@ def configure_rtd_portfolio(df_config, metrics, engine):
     st.subheader("Documentos Recentes da Carteira (Últimos 7 dias)")
 
     if not df_config.empty:
-        # 1. Cria um mapa de ticker para nome da empresa
         ticker_to_name_map = {}
         for _, row in df_empresas.iterrows():
             for ticker in row['tickers']:
                 ticker_to_name_map[ticker] = row['denom_cia']
 
-        # 2. Obtém a lista de nomes de empresas da carteira atual
-        nomes_empresas_carteira = [ticker_to_name_map.get(ticker) for ticker in df_config.index.get_level_values('ticker') if ticker_to_name_map.get(ticker)]
+        nomes_empresas_carteira = [ticker_to_name_map.get(ticker) for ticker in df_config.reset_index()['ticker'] if ticker_to_name_map.get(ticker)]
         nomes_empresas_unicos = list(set(nomes_empresas_carteira))
 
         if nomes_empresas_unicos:
-            # 3. Busca os documentos para essas empresas nos últimos 7 dias
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=7)
-            
             query = text("""
                 SELECT data_entrega, nome_companhia, categoria, assunto, link_download 
                 FROM cvm_documentos_ipe
                 WHERE nome_companhia = ANY(:nomes) AND data_entrega BETWEEN :start_date AND :end_date
                 ORDER BY data_entrega DESC, nome_companhia
             """)
-            
-            df_documentos = pd.read_sql(query, engine, params={
-                "nomes": nomes_empresas_unicos,
-                "start_date": start_date,
-                "end_date": end_date
-            })
+            df_documentos = pd.read_sql(query, engine, params={"nomes": nomes_empresas_unicos, "start_date": start_date, "end_date": end_date})
 
-            # 4. Exibe o "Alerta" e a tabela
             if not df_documentos.empty:
-                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s) para empresas da sua carteira nos últimos 7 dias!")
-                
-                df_display = df_documentos.rename(columns={
-                    'data_entrega': 'Data', 'nome_companhia': 'Empresa',
-                    'categoria': 'Categoria', 'assunto': 'Assunto'
-                })
-                
-                st.dataframe(
-                    df_display,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-                        "link_download": st.column_config.LinkColumn("Link", display_text="Abrir 📄")
-                    },
-                    column_order=["Data", "Empresa", "Categoria", "Assunto", "link_download"]
-                )
+                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s) nos últimos 7 dias!")
+                # ... (código de exibição da tabela de documentos)
             else:
                 st.info("Nenhum novo documento encontrado para as empresas da sua carteira nos últimos 7 dias.")
     else:
         st.info("Adicione ativos à sua carteira para ver os documentos recentes.")
+
 
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
