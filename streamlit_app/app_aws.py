@@ -93,7 +93,7 @@ def rtd_portfolio_page(engine):
 
 # --- Lógica principal da página ---
     metrics = {item['metric_key']: item['metric_value'] for item in metrics_resp.to_dict('records')}
-        cota_d1 = metrics.get('cota_d1', 1.0)
+    cota_d1 = metrics.get('cota_d1', 1.0)
     qtd_cotas = metrics.get('quantidade_cotas', 1)
     caixa_bruto = metrics.get('caixa_bruto', 0.0)
     outros = metrics.get('outros', 0.0)
