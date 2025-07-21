@@ -238,38 +238,62 @@ def configure_rtd_portfolio(df_config, metrics, engine, df_empresas):
             except Exception as e:
                 st.error(f"Erro ao salvar métricas: {e}")
  
- # --- NOVA SEÇÃO: DOCUMENTOS RECENTES DA CARTEIRA ---
+    # --- SEÇÃO RESTAURADA: DOCUMENTOS RECENTES DA CARTEIRA ---
     st.markdown("---")
     st.subheader("Documentos Recentes da Carteira (Últimos 7 dias)")
 
     if not df_config.empty:
+        # 1. Mapeia tickers para nomes de empresas
         ticker_to_name_map = {}
         for _, row in df_empresas.iterrows():
             for ticker in row['tickers']:
                 ticker_to_name_map[ticker] = row['denom_cia']
 
-        nomes_empresas_carteira = [ticker_to_name_map.get(ticker) for ticker in df_config.reset_index()['ticker'] if ticker_to_name_map.get(ticker)]
+        # 2. Obtém a lista de nomes de empresas da carteira atual
+        nomes_empresas_carteira = [ticker_to_name_map.get(ticker) for ticker in df_config['ticker'] if ticker_to_name_map.get(ticker)]
         nomes_empresas_unicos = list(set(nomes_empresas_carteira))
 
         if nomes_empresas_unicos:
+            # 3. Busca os documentos para essas empresas nos últimos 7 dias
             end_date = datetime.now().date()
             start_date = end_date - timedelta(days=7)
+            
             query = text("""
                 SELECT data_entrega, nome_companhia, categoria, assunto, link_download 
                 FROM cvm_documentos_ipe
                 WHERE nome_companhia = ANY(:nomes) AND data_entrega BETWEEN :start_date AND :end_date
                 ORDER BY data_entrega DESC, nome_companhia
             """)
-            df_documentos = pd.read_sql(query, engine, params={"nomes": nomes_empresas_unicos, "start_date": start_date, "end_date": end_date})
+            
+            df_documentos = pd.read_sql(query, engine, params={
+                "nomes": nomes_empresas_unicos,
+                "start_date": start_date,
+                "end_date": end_date
+            })
 
+            # 4. Exibe o "Alerta" e a tabela
             if not df_documentos.empty:
-                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s) nos últimos 7 dias!")
-                # ... (código de exibição da tabela de documentos)
+                st.success(f"🔔 Alerta: {len(df_documentos)} novo(s) documento(s) encontrado(s) para empresas da sua carteira nos últimos 7 dias!")
+                
+                df_display = df_documentos.rename(columns={
+                    'data_entrega': 'Data', 'nome_companhia': 'Empresa',
+                    'categoria': 'Categoria', 'assunto': 'Assunto'
+                })
+                
+                st.dataframe(
+                    df_display,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                        "link_download": st.column_config.LinkColumn("Link", display_text="Abrir 📄")
+                    },
+                    column_order=["Data", "Empresa", "Categoria", "Assunto", "link_download"]
+                )
             else:
                 st.info("Nenhum novo documento encontrado para as empresas da sua carteira nos últimos 7 dias.")
     else:
         st.info("Adicione ativos à sua carteira para ver os documentos recentes.")
-
 
 # =================================================================
 # PÁGINA 2: Visão Geral da Empresa (Overview)
