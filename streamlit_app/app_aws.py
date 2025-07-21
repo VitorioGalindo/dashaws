@@ -8,9 +8,10 @@ from streamlit_autorefresh import st_autorefresh
 import plotly.graph_objects as go
 import yfinance as yf
 from functools import partial # <-- IMPORTAÇÃO QUE ESTAVA FALTANDO
+from datetime import datetime, timedelta, date # <-- LINHA DE IMPORTAÇÃO ADICIONADA
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(layout="wide", page_title="Plataforma Financeira")
+st.set_page_config(layout="wide", page_title="Dashboard de Análise e Gerenciamento da Carteira - Apex - Clube Agathos")
 
 # --- 2. FUNÇÕES GLOBAIS (Conexão, Estilo, Placeholders) ---
 
@@ -408,100 +409,58 @@ def dados_historicos_page(engine):
 # =================================================================
 def documentos_cvm_page(engine):
     st.title("📄 Documentos CVM")
-
     try:
         df_empresas = pd.read_sql("SELECT DISTINCT nome_companhia FROM cvm_documentos_ipe ORDER BY nome_companhia", engine)
         lista_empresas = ["Todas"] + df_empresas['nome_companhia'].tolist()
-        
         df_categorias = pd.read_sql("SELECT DISTINCT categoria FROM cvm_documentos_ipe ORDER BY categoria", engine)
         lista_categorias = ["Todas"] + df_categorias['categoria'].tolist()
-
     except Exception as e:
-        st.error("Erro ao carregar os filtros. Execute o pipeline de ETL dos documentos IPE.")
+        st.error("Erro ao carregar filtros. Execute o pipeline de ETL dos documentos IPE.")
         return
 
-    # --- Filtros ---
     st.subheader("Filtros")
     cols_filtros = st.columns(3)
     empresa_selecionada = cols_filtros[0].selectbox("Filtrar por Empresa", options=lista_empresas)
     categoria_selecionada = cols_filtros[1].selectbox("Filtrar por Categoria", options=lista_categorias)
     
-    # --- NOVO: Filtro de Data ---
     with cols_filtros[2]:
-        # Define um período padrão de 90 dias
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=90)
-        
-        date_range = st.date_input(
-            "Filtrar por Período de Publicação",
-            value=(start_date, end_date),
-            min_value=date(2010, 1, 1),
-            max_value=end_date
-        )
+        date_range = st.date_input("Filtrar por Período de Publicação", value=(start_date, end_date))
     
-    # Garante que temos um início e um fim para o período
     try:
         start_date_filter, end_date_filter = date_range
     except ValueError:
-        st.warning("Por favor, selecione um intervalo de datas válido (início e fim).")
+        st.warning("Por favor, selecione um intervalo de datas válido.")
         st.stop()
 
-    # --- Construção da Query ---
     query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
-    params = {
-        "start_date": start_date_filter,
-        "end_date": end_date_filter
-    }
+    params = {"start_date": start_date_filter, "end_date": end_date_filter}
     conditions = ["data_entrega BETWEEN :start_date AND :end_date"]
-
     if empresa_selecionada != "Todas":
         conditions.append("nome_companhia = :empresa")
         params["empresa"] = empresa_selecionada
-    
     if categoria_selecionada != "Todas":
         conditions.append("categoria = :categoria")
         params["categoria"] = categoria_selecionada
-
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    
-    # Ordena por padrão pela data mais recente
-    query += " ORDER BY data_entrega DESC"
+    query += " ORDER BY data_entrega DESC LIMIT 100"
 
     df_documentos = pd.read_sql(text(query), engine, params=params)
 
     st.markdown("---")
     st.subheader(f"Exibindo {len(df_documentos)} documentos encontrados")
 
-    # --- NOVO: Exibição em Tabela ---
     if not df_documentos.empty:
-        # Renomeia as colunas para a exibição
-        df_display = df_documentos.rename(columns={
-            'data_entrega': 'Data de Publicação',
-            'nome_companhia': 'Empresa',
-            'categoria': 'Categoria',
-            'tipo': 'Tipo',
-            'assunto': 'Assunto'
+        df_display = df_documentos.rename(columns={'data_entrega': 'Data de Publicação', 'nome_companhia': 'Empresa', 'categoria': 'Categoria', 'tipo': 'Tipo', 'assunto': 'Assunto'})
+        st.dataframe(df_display, use_container_width=True, hide_index=True, column_config={
+            "Data de Publicação": st.column_config.DateColumn("Data de Publicação", format="DD/MM/YYYY"),
+            "link_download": st.column_config.LinkColumn("Link", display_text="Abrir 📄")
         })
-
-        st.dataframe(
-            df_display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Data de Publicação": st.column_config.DateColumn(
-                    "Data de Publicação",
-                    format="DD/MM/YYYY",
-                ),
-                "link_download": st.column_config.LinkColumn(
-                    "Link",
-                    display_text="Abrir 📄"
-                )
-            }
-        )
     else:
         st.info("Nenhum documento encontrado com os filtros selecionados.")
-        
+
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Plataforma Financeira")
 
