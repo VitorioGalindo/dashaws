@@ -57,6 +57,18 @@ def placeholder_page(title, engine):
     """Função genérica para páginas em construção."""
     st.title(title)
     st.info("Página em construção.")
+    
+@st.cache_data(ttl=3600)
+def get_pdf_from_url(url):
+    """Baixa o conteúdo de um PDF de uma URL."""
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except requests.exceptions.RequestException as e:
+        st.error(f"Não foi possível baixar o PDF: {e}")
+        return None
+
 
 # --- 3. FUNÇÕES DE CADA PÁGINA DO DASHBOARD ---
 
@@ -409,17 +421,6 @@ def dados_historicos_page(engine):
 # =================================================================
 # PÁGINA: Documentos CVM (VERSÃO MELHORADA COM TABELA E FILTROS)
 # =================================================================
-@st.cache_data(ttl=3600) # Cache de 1 hora para a função
-def get_pdf_from_url(url):
-    """Baixa o conteúdo de um PDF de uma URL."""
-    try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        return response.content
-    except requests.exceptions.RequestException as e:
-        st.error(f"Não foi possível baixar o PDF: {e}")
-        return None
-
 def documentos_cvm_page(engine):
     st.title("📄 Documentos CVM")
 
@@ -430,7 +431,6 @@ def documentos_cvm_page(engine):
         st.error(f"Erro ao carregar filtros. Execute os pipelines ETL. Detalhes: {e}")
         return
 
-    # --- Cria a lista de seleção (Ticker - Nome da Empresa) ---
     ticker_map = {"Todas as Empresas": "Todas"}
     lista_selecao = ["Todas as Empresas"]
     for _, row in df_empresas.iterrows():
@@ -439,7 +439,6 @@ def documentos_cvm_page(engine):
             lista_selecao.append(display_name)
             ticker_map[display_name] = row['denom_cia']
 
-    # --- Filtros ---
     st.subheader("Filtros")
     cols_filtros = st.columns(3)
     selecao_display = cols_filtros[0].selectbox("Filtrar por Empresa", options=sorted(lista_selecao))
@@ -452,6 +451,12 @@ def documentos_cvm_page(engine):
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=90)
         date_range = st.date_input("Filtrar por Período de Publicação", value=(start_date, end_date))
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    if len(date_range) != 2:
+        st.warning("Por favor, selecione um intervalo de datas válido (início e fim).")
+        st.stop()
+    start_date_filter, end_date_filter = date_range
 
     query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
     params = {"start_date": start_date_filter, "end_date": end_date_filter}
@@ -465,16 +470,12 @@ def documentos_cvm_page(engine):
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY data_entrega DESC LIMIT 100"
+    df_documentos = pd.read_sql(text(query), engine, params=params)
 
- # --- Exibição da Lista e do Visualizador ---
     st.markdown("---")
-    main_cols_docs = st.columns([1, 1]) # Duas colunas principais
-
+    main_cols_docs = st.columns([1, 1])
     with main_cols_docs[0]:
-        st.subheader(f"Documentos Encontrados")
-        # ... (lógica da query para buscar df_documentos) ...
-        df_documentos = pd.DataFrame() # Placeholder
-        
+        st.subheader(f"Documentos Encontrados ({len(df_documentos)})")
         if not df_documentos.empty:
             for index, row in df_documentos.iterrows():
                 if st.button(f"{pd.to_datetime(row['data_entrega']).strftime('%d/%m/%Y')} - {row['categoria']} - {row['assunto']}", key=f"doc_{index}"):
@@ -486,24 +487,15 @@ def documentos_cvm_page(engine):
         st.subheader("Visualizador de Documento")
         if 'selected_pdf_url' in st.session_state and st.session_state['selected_pdf_url']:
             pdf_url = st.session_state['selected_pdf_url']
-            
             st.markdown(f"[Abrir em nova aba ↗️]({pdf_url})")
-
             pdf_content = get_pdf_from_url(pdf_url)
             if pdf_content:
-                st.download_button(
-                    label="Baixar Documento 📥",
-                    data=pdf_content,
-                    file_name="documento_cvm.pdf",
-                    mime="application/pdf",
-                )
-                
-                # Embed do PDF
+                st.download_button(label="Baixar Documento 📥", data=pdf_content, file_name="documento_cvm.pdf", mime="application/pdf")
                 base64_pdf = base64.b64encode(pdf_content).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
         else:
-            st.info("Clique em um documento na lista à esquerda para visualizá-lo aqui.")
+            st.info("Clique em um documento na lista à esquerda para visualizá-lo.")
 
 
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
