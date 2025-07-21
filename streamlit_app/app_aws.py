@@ -238,19 +238,21 @@ def configure_rtd_portfolio(df_config, metrics, engine, df_empresas):
             except Exception as e:
                 st.error(f"Erro ao salvar métricas: {e}")
  
-    # --- SEÇÃO RESTAURADA: DOCUMENTOS RECENTES DA CARTEIRA ---
+    # --- SEÇÃO ATUALIZADA: DOCUMENTOS RECENTES DA CARTEIRA ---
     st.markdown("---")
     st.subheader("Documentos Recentes da Carteira (Últimos 7 dias)")
 
     if not df_config.empty:
-        # 1. Mapeia tickers para nomes de empresas
+        # 1. Cria um mapa de ticker para nome da empresa
         ticker_to_name_map = {}
         for _, row in df_empresas.iterrows():
-            for ticker in row['tickers']:
-                ticker_to_name_map[ticker] = row['denom_cia']
+            # A coluna 'tickers' é uma lista, então iteramos sobre ela
+            if row['tickers']:
+                for ticker in row['tickers']:
+                    ticker_to_name_map[ticker] = row['denom_cia']
 
         # 2. Obtém a lista de nomes de empresas da carteira atual
-        nomes_empresas_carteira = [ticker_to_name_map.get(ticker) for ticker in df_config['ticker'] if ticker_to_name_map.get(ticker)]
+        nomes_empresas_carteira = [ticker_to_name_map.get(ticker.strip().upper()) for ticker in df_config['ticker'] if ticker_to_name_map.get(ticker.strip().upper())]
         nomes_empresas_unicos = list(set(nomes_empresas_carteira))
 
         if nomes_empresas_unicos:
@@ -292,6 +294,12 @@ def configure_rtd_portfolio(df_config, metrics, engine, df_empresas):
                 )
             else:
                 st.info("Nenhum novo documento encontrado para as empresas da sua carteira nos últimos 7 dias.")
+        else:
+            # Mensagem de Debug caso a correspondência falhe
+            st.warning("Não foi possível encontrar os nomes das empresas correspondentes aos tickers na sua carteira.")
+            with st.expander("Detalhes de Debug"):
+                st.write("Tickers na sua carteira (`portfolio_config`):", df_config['ticker'].tolist())
+                st.write("Mapa de Tickers para Nomes (`dim_empresas`):", ticker_to_name_map)
     else:
         st.info("Adicione ativos à sua carteira para ver os documentos recentes.")
 
