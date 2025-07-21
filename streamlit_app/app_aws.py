@@ -78,7 +78,7 @@ def get_pdf_from_url(url):
 # PÁGINA 1: CARTEIRA EM TEMPO REAL (RTD)
 # =================================================================
 def rtd_portfolio_page(engine):
-    st.title("📊 Carteira de Ações em Tempo Real (RTD)")
+    st.title("📊 Carteira de Ações em Tempo Real (RTD) - VERSAO DEBUG")
     st_autorefresh(interval=60000, key="rtd_refresher")
 
     try:
