@@ -152,7 +152,7 @@ def rtd_portfolio_page(engine):
         with st.expander("Gerenciar Ativos e Métricas"):
             configure_rtd_portfolio(df_config, metrics)
             
-def configure_rtd_portfolio(df_config, metrics):
+def configure_rtd_portfolio(df_config, metrics, engine):
     """Renderiza os componentes para gerenciar ativos e métricas."""
     
     # --- SEÇÃO PARA GERENCIAR ATIVOS ---
