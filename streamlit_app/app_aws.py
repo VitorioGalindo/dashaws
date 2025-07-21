@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 import yfinance as yf
 from functools import partial # <-- IMPORTAÇÃO QUE ESTAVA FALTANDO
 from datetime import datetime, timedelta, date # <-- LINHA DE IMPORTAÇÃO ADICIONADA
+import requests
+import base64 # <-- Adicionado para o visualizador de PDF
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(layout="wide", page_title="Dashboard de Análise e Gerenciamento da Carteira - Apex - Clube Agathos")
@@ -407,32 +409,49 @@ def dados_historicos_page(engine):
 # =================================================================
 # PÁGINA: Documentos CVM (VERSÃO MELHORADA COM TABELA E FILTROS)
 # =================================================================
+@st.cache_data(ttl=3600) # Cache de 1 hora para a função
+def get_pdf_from_url(url):
+    """Baixa o conteúdo de um PDF de uma URL."""
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except requests.exceptions.RequestException as e:
+        st.error(f"Não foi possível baixar o PDF: {e}")
+        return None
+
 def documentos_cvm_page(engine):
     st.title("📄 Documentos CVM")
+
     try:
-        df_empresas = pd.read_sql("SELECT DISTINCT nome_companhia FROM cvm_documentos_ipe ORDER BY nome_companhia", engine)
-        lista_empresas = ["Todas"] + df_empresas['nome_companhia'].tolist()
+        df_empresas = pd.read_sql("SELECT tickers, denom_cia FROM dim_empresas", engine)
         df_categorias = pd.read_sql("SELECT DISTINCT categoria FROM cvm_documentos_ipe ORDER BY categoria", engine)
-        lista_categorias = ["Todas"] + df_categorias['categoria'].tolist()
     except Exception as e:
-        st.error("Erro ao carregar filtros. Execute o pipeline de ETL dos documentos IPE.")
+        st.error(f"Erro ao carregar filtros. Execute os pipelines ETL. Detalhes: {e}")
         return
 
+    # --- Cria a lista de seleção (Ticker - Nome da Empresa) ---
+    ticker_map = {"Todas as Empresas": "Todas"}
+    lista_selecao = ["Todas as Empresas"]
+    for _, row in df_empresas.iterrows():
+        for ticker in row['tickers']:
+            display_name = f"{ticker} - {row['denom_cia']}"
+            lista_selecao.append(display_name)
+            ticker_map[display_name] = row['denom_cia']
+
+    # --- Filtros ---
     st.subheader("Filtros")
     cols_filtros = st.columns(3)
-    empresa_selecionada = cols_filtros[0].selectbox("Filtrar por Empresa", options=lista_empresas)
+    selecao_display = cols_filtros[0].selectbox("Filtrar por Empresa", options=sorted(lista_selecao))
+    empresa_selecionada = ticker_map[selecao_display]
+    
+    lista_categorias = ["Todas"] + df_categorias['categoria'].tolist()
     categoria_selecionada = cols_filtros[1].selectbox("Filtrar por Categoria", options=lista_categorias)
     
     with cols_filtros[2]:
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=90)
         date_range = st.date_input("Filtrar por Período de Publicação", value=(start_date, end_date))
-    
-    try:
-        start_date_filter, end_date_filter = date_range
-    except ValueError:
-        st.warning("Por favor, selecione um intervalo de datas válido.")
-        st.stop()
 
     query = "SELECT data_entrega, nome_companhia, categoria, tipo, assunto, link_download FROM cvm_documentos_ipe"
     params = {"start_date": start_date_filter, "end_date": end_date_filter}
@@ -447,22 +466,48 @@ def documentos_cvm_page(engine):
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY data_entrega DESC LIMIT 100"
 
-    df_documentos = pd.read_sql(text(query), engine, params=params)
-
+ # --- Exibição da Lista e do Visualizador ---
     st.markdown("---")
-    st.subheader(f"Exibindo {len(df_documentos)} documentos encontrados")
+    main_cols_docs = st.columns([1, 1]) # Duas colunas principais
 
-    if not df_documentos.empty:
-        df_display = df_documentos.rename(columns={'data_entrega': 'Data de Publicação', 'nome_companhia': 'Empresa', 'categoria': 'Categoria', 'tipo': 'Tipo', 'assunto': 'Assunto'})
-        st.dataframe(df_display, use_container_width=True, hide_index=True, column_config={
-            "Data de Publicação": st.column_config.DateColumn("Data de Publicação", format="DD/MM/YYYY"),
-            "link_download": st.column_config.LinkColumn("Link", display_text="Abrir 📄")
-        })
-    else:
-        st.info("Nenhum documento encontrado com os filtros selecionados.")
+    with main_cols_docs[0]:
+        st.subheader(f"Documentos Encontrados")
+        # ... (lógica da query para buscar df_documentos) ...
+        df_documentos = pd.DataFrame() # Placeholder
+        
+        if not df_documentos.empty:
+            for index, row in df_documentos.iterrows():
+                if st.button(f"{pd.to_datetime(row['data_entrega']).strftime('%d/%m/%Y')} - {row['categoria']} - {row['assunto']}", key=f"doc_{index}"):
+                    st.session_state['selected_pdf_url'] = row['link_download']
+        else:
+            st.info("Nenhum documento encontrado.")
+
+    with main_cols_docs[1]:
+        st.subheader("Visualizador de Documento")
+        if 'selected_pdf_url' in st.session_state and st.session_state['selected_pdf_url']:
+            pdf_url = st.session_state['selected_pdf_url']
+            
+            st.markdown(f"[Abrir em nova aba ↗️]({pdf_url})")
+
+            pdf_content = get_pdf_from_url(pdf_url)
+            if pdf_content:
+                st.download_button(
+                    label="Baixar Documento 📥",
+                    data=pdf_content,
+                    file_name="documento_cvm.pdf",
+                    mime="application/pdf",
+                )
+                
+                # Embed do PDF
+                base64_pdf = base64.b64encode(pdf_content).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.info("Clique em um documento na lista à esquerda para visualizá-lo aqui.")
+
 
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
-st.sidebar.title("Plataforma Financeira")
+st.sidebar.title("Dashboard de Análise e Gerenciamento da Carteira - Apex - Clube Agathos")
 
 # Criamos a conexão com o banco de dados UMA VEZ
 db_engine = get_db_engine()
