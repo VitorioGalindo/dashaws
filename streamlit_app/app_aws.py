@@ -567,6 +567,20 @@ def documentos_cvm_page(engine):
     else:
         st.info("Nenhum documento encontrado com os filtros selecionados.")
 
+# =================================================================
+# NOVA PÁGINA: Assistentes de IA
+# =================================================================
+def assistentes_ia_page(engine):
+    st.title("🤖 Assistentes de IA")
+    st.info("Esta é a sua central de assistentes de IA, integrada à plataforma.")
+
+    # --- Use a URL que o AWS App Runner forneceu para o seu backend de assistentes ---
+    ASSISTENTE_URL = "https://ikr3ycmefq.us-east-2.awsapprunner.com "
+    
+    # Usa o componente de iframe do Streamlit para embutir a outra aplicação
+    st.components.v1.iframe(ASSISTENTE_URL, height=800, scrolling=True)
+
+
 # --- 4. NAVEGAÇÃO PRINCIPAL ---
 st.sidebar.title("Dashboard de Análise e Gerenciamento da Carteira - Apex - Clube Agathos")
 
@@ -575,6 +589,7 @@ db_engine = get_db_engine()
 
 PAGES = {
      "Carteira em Tempo Real": rtd_portfolio_page,
+      "Assistentes de IA": assistentes_ia_page,
     "Visão Geral da Empresa (Overview)": visao_geral_empresa_page,
     "Dados Históricos": dados_historicos_page,
     "Comparador de Empresas": partial(placeholder_page, "⚖️ Comparador de Empresas"),
